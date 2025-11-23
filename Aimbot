@@ -1,0 +1,249 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.ResetOnSpawn = false
+
+-- Aimbot button
+local button = Instance.new("TextButton", ScreenGui)
+button.Size = UDim2.new(0, 120, 0, 40)
+button.Position = UDim2.new(0.5, -60, 0.70, -20)
+button.BackgroundColor3 = Color3.fromRGB(20,20,20)
+button.TextColor3 = Color3.new(1,0,0)
+button.Text = "Aimbot OFF"
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 20
+button.Active = true
+button.Draggable = true
+
+-- TeamCheck button
+local teamButton = Instance.new("TextButton", ScreenGui)
+teamButton.Size = UDim2.new(0, 140, 0, 40)
+teamButton.Position = UDim2.new(0.5, -70, 0.78, -20)
+teamButton.BackgroundColor3 = Color3.fromRGB(20,20,20)
+teamButton.TextColor3 = Color3.new(1,1,0)
+teamButton.Text = "TeamCheck ON"
+teamButton.Font = Enum.Font.SourceSansBold
+teamButton.TextSize = 20
+teamButton.Active = true
+teamButton.Draggable = true
+
+-- WallCheck button
+local wallButton = Instance.new("TextButton", ScreenGui)
+wallButton.Size = UDim2.new(0, 140, 0, 40)
+wallButton.Position = UDim2.new(0.5, -70, 0.86, -20)
+wallButton.BackgroundColor3 = Color3.fromRGB(20,20,20)
+wallButton.TextColor3 = Color3.new(0,1,1)
+wallButton.Text = "WallCheck ON"
+wallButton.Font = Enum.Font.SourceSansBold
+wallButton.TextSize = 20
+wallButton.Active = true
+wallButton.Draggable = true
+
+
+-- DRAG SYSTEM
+local dragging, dragStart, startPos = false, nil, nil
+
+local function makeDraggable(btn)
+	btn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			dragStart = input.Position
+			startPos = btn.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+			btn.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+makeDraggable(button)
+makeDraggable(teamButton)
+makeDraggable(wallButton)
+
+
+-----------------------------------
+-- AIMBOT SETTINGS
+-----------------------------------
+
+local Aimbot = false
+local TeamCheck = true
+local WallCheck = true
+local AimStrength = 1
+
+button.MouseButton1Click:Connect(function()
+	Aimbot = not Aimbot
+	button.Text = Aimbot and "Aimbot ON" or "Aimbot OFF"
+	button.TextColor3 = Aimbot and Color3.new(0,1,0) or Color3.new(1,0,0)
+end)
+
+teamButton.MouseButton1Click:Connect(function()
+	TeamCheck = not TeamCheck
+	teamButton.Text = TeamCheck and "TeamCheck ON" or "TeamCheck OFF"
+	teamButton.TextColor3 = TeamCheck and Color3.new(1,1,0) or Color3.new(.5,.5,.5)
+end)
+
+wallButton.MouseButton1Click:Connect(function()
+	WallCheck = not WallCheck
+	wallButton.Text = WallCheck and "WallCheck ON" or "WallCheck OFF"
+	wallButton.TextColor3 = WallCheck and Color3.new(0,1,1) or Color3.new(.5,.5,.5)
+end)
+
+
+---------------------------
+-- WALL CHECK
+---------------------------
+local function isVisible(targetPart)
+	if not WallCheck then return true end
+
+	local origin = Camera.CFrame.Position
+	local direction = targetPart.Position - origin
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = {LocalPlayer.Character}
+
+	local result = Workspace:Raycast(origin, direction, params)
+
+	if not result then return true end
+	return result.Instance:IsDescendantOf(targetPart.Parent)
+end
+
+
+---------------------------
+-- TARGET LOCK SYSTEM
+---------------------------
+local LockedTarget = nil
+
+local function validateTarget()
+	if not LockedTarget then return false end
+	if not LockedTarget.Parent then return false end
+
+	local hum = LockedTarget.Parent:FindFirstChild("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+
+	-- mất tầm nhìn thì bỏ target
+	if not isVisible(LockedTarget) then return false end
+
+	return true
+end
+
+---------------------------
+-- FIND NEAREST IF NO TARGET
+---------------------------
+local function getClosestPlayer()
+	local nearest, shortest = nil, math.huge
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer 
+		and p.Character 
+		and p.Character:FindFirstChild("Head") then
+
+			if not TeamCheck or (p.Team ~= LocalPlayer.Team) then
+				local head = p.Character.Head
+				local dist = (head.Position - Camera.CFrame.Position).Magnitude
+
+				if dist < shortest then
+					if isVisible(head) then
+						shortest = dist
+						nearest = head
+					end
+				end
+			end
+		end
+	end
+
+	return nearest
+end
+
+
+-----------------------------------
+-- RAINBOW ESP OUTLINE
+-----------------------------------
+local function applyRainbowESP(character)
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			if not part:FindFirstChild("HighlightESP") then
+				local highlight = Instance.new("Highlight")
+				highlight.Name = "HighlightESP"
+				highlight.FillTransparency = 1
+				highlight.OutlineTransparency = 0
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Parent = part
+			end
+		end
+	end
+end
+
+local function removeESP(character)
+	for _, obj in ipairs(character:GetDescendants()) do
+		if obj.Name == "HighlightESP" then
+			obj:Destroy()
+		end
+	end
+end
+
+
+-----------------------------------
+-- AIMBOT MAIN LOOP
+-----------------------------------
+RunService.RenderStepped:Connect(function()
+	-- xoay màu cầu vồng
+	local rainbow = Color3.fromHSV(tick() % 5 / 5, 1, 1)
+
+	if not Aimbot then
+		if LockedTarget then
+			removeESP(LockedTarget.Parent)
+		end
+		LockedTarget = nil
+		return
+	end
+
+	-- có target -> aim target, không đổi sang người khác
+	if not validateTarget() then
+		if LockedTarget then
+			removeESP(LockedTarget.Parent)
+		end
+
+		LockedTarget = getClosestPlayer()
+
+		if LockedTarget then
+			applyRainbowESP(LockedTarget.Parent)
+		end
+	end
+
+	-- nếu có target thì aim
+	if LockedTarget then
+		-- cập nhật màu cầu vồng cho outline
+		for _, obj in ipairs(LockedTarget.Parent:GetDescendants()) do
+			if obj.Name == "HighlightESP" then
+				obj.OutlineColor = rainbow
+			end
+		end
+
+		local direction = (LockedTarget.Position - Camera.CFrame.Position).Unit
+		local newCF = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + direction)
+		Camera.CFrame = Camera.CFrame:Lerp(newCF, AimStrength)
+	end
+end)
