@@ -1,7 +1,7 @@
 --[[
-  Aimbot Universal GUI - Ayka Script v4 (Mod 360° Aim)
-  Mod by ChatGPT
---]]
+  Aimbot Universal GUI - Quân Script v4 (REAL 360° Aim Update)
+  Modified: Enhanced 360° Aim to use Nearest Player Priority
+]]
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -20,7 +20,7 @@ local Settings = {
     FOVVisible = true,
     RGB = true,
     AimStrength = 0.5,
-    Aim360 = false, -- NEW: Aim toàn map 360°
+    Aim360 = false, -- Thiết lập mặc định
 }
 
 -- SOUNDS
@@ -37,7 +37,7 @@ local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"
 ScreenGui.ResetOnSpawn = false
 
 local openBtn = Instance.new("TextButton")
-openBtn.Text = "Open Ayka Menu"
+openBtn.Text = "Open Quân Menu" -- Đã đổi tên
 openBtn.Size = UDim2.new(0, 150, 0, 40)
 openBtn.Position = UDim2.new(0, 20, 0.5, -100)
 openBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -54,7 +54,7 @@ menu.Visible = false
 menu.Parent = ScreenGui
 
 local title = Instance.new("TextLabel")
-title.Text = "Aykad-7p"
+title.Text = "Quân-7p" -- Đã đổi tên
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 22
 title.TextColor3 = Color3.fromHSV(0, 1, 1)
@@ -178,7 +178,7 @@ createToggle("Team Check", Settings.TeamCheck, function(v) Settings.TeamCheck = 
 createToggle("Wall Check", Settings.WallCheck, function(v) Settings.WallCheck = v end)
 createToggle("FOV Visible", Settings.FOVVisible, function(v) Settings.FOVVisible = v end)
 createToggle("RGB FOV", Settings.RGB, function(v) Settings.RGB = v end)
-createToggle("360° Aim (No FOV)", false, function(v) Settings.Aim360 = v end) -- NEW
+createToggle("360° Aim (REAL)", Settings.Aim360, function(v) Settings.Aim360 = v end)
 createOption("Target Part", {"Head", "Torso"}, function(v) Settings.Part = v end)
 createFOVButtons()
 createAimStrengthInput()
@@ -196,7 +196,15 @@ fovCircle.Filled = false
 
 local hue = 0
 
+-- RGB HIGHLIGHT
+local highlight = Instance.new("Highlight")
+highlight.FillTransparency = 1
+highlight.OutlineColor = Color3.new(1,0,0)
+highlight.Parent = workspace
+highlight.Enabled = false
+
 RunService.RenderStepped:Connect(function()
+    -- Vô hiệu hóa FOV Circle khi bật 360° Aim để tránh gây rối
     fovCircle.Visible = Settings.FOVVisible and not Settings.Aim360
     fovCircle.Radius = Settings.FOV
     fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
@@ -204,11 +212,12 @@ RunService.RenderStepped:Connect(function()
     if Settings.RGB then
         hue = (hue + 1) % 360
         fovCircle.Color = Color3.fromHSV(hue/360, 1, 1)
+        highlight.OutlineColor = Color3.fromHSV(hue/360, 1, 1)
     else
         fovCircle.Color = Color3.new(1, 1, 1)
     end
 
-    title.TextColor3 = Settings.RGB and Color3.fromHSV(hue/360, 1, 1) or Color3.new(1, 1, 1)
+    title.TextColor3 = Settings.RGB and Color3.fromHSV(hue/360, 1, 1)
 end)
 
 -- VISIBILITY CHECK
@@ -222,38 +231,53 @@ function isVisible(targetPart)
     return not result
 end
 
--- GET TARGET
+-- NEW TARGET FUNCTION: Dựa trên ưu tiên
 function getClosest()
     local closest = nil
-    local dist = Settings.Aim360 and 999999 or Settings.FOV -- NEW: no FOV limit if Aim360 on
+    -- Khởi tạo tiêu chí tìm kiếm lớn nhất có thể
+    local smallestDist = math.huge 
+
+    local playerRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not playerRoot then return nil end
 
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") then
+        local char = p.Character
+        if p ~= LocalPlayer 
+        and char 
+        and char:FindFirstChild("Humanoid") 
+        and char.Humanoid.Health > 0 
+        then
 
-            if p.Character.Humanoid.Health <= 0 then continue end
             if Settings.TeamCheck and p.Team == LocalPlayer.Team then continue end
 
-            local part = p.Character:FindFirstChild(Settings.Part)
+            local part = char:FindFirstChild(Settings.Part)
             if not part then continue end
 
-            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-            if not onScreen then continue end
+            if Settings.WallCheck and not isVisible(part) then continue end
 
-            local distance = (Vector2.new(screenPos.X, screenPos.Y) - Camera.ViewportSize/2).Magnitude
+            local currentDist = math.huge
 
-            -- 360° MODE
             if Settings.Aim360 then
-                if Settings.WallCheck and not isVisible(part) then continue end
-                if distance < dist then
-                    closest = part
-                    dist = distance
-                end
+                -- THẬT 360° AIM (NEAREST PLAYER PRIORITY): Ưu tiên mục tiêu gần vị trí người chơi nhất
+                -- Khoảng cách 3D từ người chơi đến mục tiêu
+                currentDist = (part.Position - playerRoot.Position).Magnitude
             else
-                if distance < dist then
-                    if Settings.WallCheck and not isVisible(part) then continue end
-                    closest = part
-                    dist = distance
-                end
+                -- CHẾ ĐỘ THƯỜNG (NEAREST CROSSHAIR PRIORITY): Ưu tiên mục tiêu gần tâm crosshair nhất và trong FOV
+                local screenPos, visible = Camera:WorldToViewportPoint(part.Position)
+                if not visible then continue end -- Bắt buộc phải hiển thị trên màn hình
+
+                -- Khoảng cách 2D từ mục tiêu đến tâm màn hình
+                local distToCrosshair = (Vector2.new(screenPos.X, screenPos.Y) - 
+                                         Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                
+                if distToCrosshair > Settings.FOV then continue end
+
+                currentDist = distToCrosshair
+            end
+            
+            if currentDist < smallestDist then
+                smallestDist = currentDist
+                closest = part
             end
         end
     end
@@ -261,14 +285,24 @@ function getClosest()
     return closest
 end
 
--- AIMBOT
+-- AIMBOT + RGB OUTLINE
 RunService.RenderStepped:Connect(function()
-    if not Settings.Aimbot then return end
+    if not Settings.Aimbot then 
+        highlight.Enabled = false
+        return 
+    end
 
     local target = getClosest()
     if target then
+        highlight.Adornee = target.Parent
+        highlight.Enabled = true
+
         local direction = (target.Position - Camera.CFrame.Position).Unit
         local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + direction)
+        
+        -- Sử dụng Lerp để làm mượt chuyển động, ngay cả với 360 độ
         Camera.CFrame = Camera.CFrame:Lerp(newCFrame, Settings.AimStrength)
+    else
+        highlight.Enabled = false
     end
 end)
